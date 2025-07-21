@@ -11,12 +11,18 @@ class Message:
         uniq_id: str = None,
         tool_calls=None,
         tool_call_id=None,
+        role_id: int = None,
+        role_name: str = None,
+        voice_hash: str = None,
     ):
         self.uniq_id = uniq_id if uniq_id is not None else str(uuid.uuid4())
         self.role = role
         self.content = content
         self.tool_calls = tool_calls
         self.tool_call_id = tool_call_id
+        self.role_id = role_id  # 音色识别的角色ID
+        self.role_name = role_name  # 角色名称（助手、用户1、用户2等）
+        self.voice_hash = voice_hash  # 音色哈希值
 
 
 class Dialogue:

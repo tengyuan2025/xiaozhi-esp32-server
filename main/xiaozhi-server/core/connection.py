@@ -227,8 +227,9 @@ class ConnectionHandler:
                         # 创建新事件循环（避免与主循环冲突）
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
+                        # 使用新的总结记忆逻辑
                         loop.run_until_complete(
-                            self.memory.save_memory(self.dialogue.dialogue)
+                            self.memory.save_memory(self.dialogue.dialogue, self.session_id)
                         )
                     except Exception as e:
                         self.logger.bind(tag=TAG).error(f"保存记忆失败: {e}")

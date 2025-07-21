@@ -57,6 +57,7 @@ class ManageApiClient:
                 "Authorization": "Bearer " + cls._secret,
             },
             timeout=cls.config.get("timeout", 30),  # 默认超时时间30秒
+            proxies={},  # 明确禁用所有代理
         )
 
     @classmethod
