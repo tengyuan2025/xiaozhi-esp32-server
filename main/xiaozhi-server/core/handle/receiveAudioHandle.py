@@ -6,6 +6,9 @@ import time
 import asyncio
 from core.handle.sendAudioHandle import SentenceType
 from core.utils.util import audio_to_data
+from config.logger import setup_logging
+
+logger = setup_logging()
 
 TAG = __name__
 
@@ -13,6 +16,9 @@ TAG = __name__
 async def handleAudioMessage(conn, audio):
     # 当前片段是否有人说话
     have_voice = conn.vad.is_vad(conn, audio)
+
+    # 🔍 调试信息：使用INFO级别确保能看到
+    logger.bind(tag=TAG).info(f"VAD检测结果: have_voice={have_voice}")
     # 如果设备刚刚被唤醒，短暂忽略VAD检测
     if have_voice and hasattr(conn, "just_woken_up") and conn.just_woken_up:
         have_voice = False
@@ -87,9 +93,8 @@ async def no_voice_close_connect(conn, have_voice):
                 await conn.close()
                 return
             prompt = end_prompt.get("prompt")
-            if not prompt:
-                prompt = "请你以```时间过得真快```未来头，用富有感情、依依不舍的话来结束这场对话吧。！"
-            await startToChat(conn, prompt)
+            if prompt:
+                await startToChat(conn, prompt)
 
 
 async def max_out_size(conn):

@@ -43,7 +43,8 @@ async def monitor_stdin():
 
 
 async def main():
-    check_ffmpeg_installed()
+    # Commented out ffmpeg check since EdgeTTS works with file-based approach without ffprobe
+    # check_ffmpeg_installed()
     config = load_config()
 
     # 默认使用manager-api的secret作为auth_key

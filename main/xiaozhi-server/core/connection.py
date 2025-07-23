@@ -202,6 +202,7 @@ class ConnectionHandler:
             self.executor.submit(self._initialize_components)
 
             try:
+                self.logger.bind(tag=TAG).info("🔍 [WebSocket] 开始监听消息...")
                 async for message in self.websocket:
                     await self._route_message(message)
             except websockets.exceptions.ConnectionClosed:
@@ -262,6 +263,8 @@ class ConnectionHandler:
                 return
             if self.asr is None:
                 return
+            self.logger.bind(tag=TAG).info(f"🔍 [WebSocket] 接收音频数据 {len(message)} 字节")
+            # 🔍 调试信息：记录音频数据接收
             self.asr_audio_queue.put(message)
 
     async def handle_restart(self, message):
@@ -329,12 +332,16 @@ class ConnectionHandler:
             """初始化本地组件"""
             if self.vad is None:
                 self.vad = self._vad
+                self.logger.bind(tag=TAG).info(f"🔍 [初始化] VAD模块已初始化: {type(self.vad)}")
             if self.asr is None:
                 self.asr = self._initialize_asr()
+                self.logger.bind(tag=TAG).info(f"🔍 [初始化] ASR模块已初始化: {type(self.asr)}")
             # 打开语音识别通道
+            self.logger.bind(tag=TAG).info("🔍 [初始化] 正在打开ASR音频通道...")
             asyncio.run_coroutine_threadsafe(
                 self.asr.open_audio_channels(self), self.loop
             )
+            self.logger.bind(tag=TAG).info("🔍 [初始化] ASR音频通道已打开")
             if self.tts is None:
                 self.tts = self._initialize_tts()
             # 打开语音合成通道

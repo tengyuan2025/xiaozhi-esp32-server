@@ -1,4 +1,5 @@
 import openai
+import time
 from openai.types import CompletionUsage
 from config.logger import setup_logging
 from core.utils.util import check_model_key
@@ -46,6 +47,11 @@ class LLMProvider(LLMProviderBase):
 
     def response(self, session_id, dialogue, **kwargs):
         try:
+            # 🤖 实时性检测：记录DeepSeek LLM请求开始时间
+            llm_request_start_time = time.time()
+            user_message = dialogue[-1]['content'] if dialogue and len(dialogue) > 0 else "[unknown]"
+            logger.bind(tag=TAG).info(f"🤖 [实时检测] DeepSeek LLM开始处理请求 - 用户消息: {user_message} | 开始时间: {llm_request_start_time:.3f}")
+            
             responses = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=dialogue,
@@ -59,6 +65,9 @@ class LLMProvider(LLMProviderBase):
             )
 
             is_active = True
+            first_chunk_received = False
+            complete_response = ""
+            
             for chunk in responses:
                 try:
                     # 检查是否存在有效的choice且content不为空
@@ -70,7 +79,15 @@ class LLMProvider(LLMProviderBase):
                     content = delta.content if hasattr(delta, "content") else ""
                 except IndexError:
                     content = ""
+                    
                 if content:
+                    # 🤖 实时性检测：记录第一个响应块的接收时间
+                    if not first_chunk_received:
+                        first_chunk_time = time.time()
+                        first_token_latency = (first_chunk_time - llm_request_start_time) * 1000
+                        logger.bind(tag=TAG).info(f"🤖 [实时检测] DeepSeek LLM第一个响应块接收 | 首token延迟: {first_token_latency:.1f}ms")
+                        first_chunk_received = True
+                    
                     # 处理标签跨多个chunk的情况
                     if "<think>" in content:
                         is_active = False
@@ -79,7 +96,13 @@ class LLMProvider(LLMProviderBase):
                         is_active = True
                         content = content.split("</think>")[-1]
                     if is_active:
+                        complete_response += content
                         yield content
+            
+            # 🤖 实时性检测：记录完整响应完成时间
+            llm_response_end_time = time.time()
+            total_response_time = (llm_response_end_time - llm_request_start_time) * 1000
+            logger.bind(tag=TAG).info(f"🤖 [实时检测] DeepSeek LLM响应完成 - 总耗时: {total_response_time:.1f}ms | 响应内容: {complete_response.strip()}")
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"Error in response generation: {e}")

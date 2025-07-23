@@ -58,6 +58,11 @@ class MemoryProvider(MemoryProviderBase):
             # 为每个参与者生成基于完整对话上下文的记忆
             results = []
             for participant_id, participant_info in participants.items():
+                # 跳过助手角色，不为助手生成记忆
+                if participant_info.get('role_name') == '助手':
+                    print(f"跳过为助手生成记忆 (ID: {participant_id})")
+                    continue
+                
                 # 收集该参与者的发言（用于统计）
                 participant_messages = []
                 for message in enhanced_msgs:

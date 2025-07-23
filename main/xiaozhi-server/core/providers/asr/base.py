@@ -35,9 +35,12 @@ class ASRProviderBase(ABC):
 
     # 有序处理ASR音频
     def asr_text_priority_thread(self, conn):
+        logger.bind(tag=TAG).info("🔍 [ASR线程] ASR音频处理线程已启动")
         while not conn.stop_event.is_set():
             try:
+                logger.bind(tag=TAG).info("🔍 [ASR线程] 等待音频数据...")
                 message = conn.asr_audio_queue.get(timeout=1)
+                logger.bind(tag=TAG).info(f"🔍 [ASR线程] 从队列获取音频数据 {len(message)} 字节")
                 future = asyncio.run_coroutine_threadsafe(
                     handleAudioMessage(conn, message),
                     conn.loop,

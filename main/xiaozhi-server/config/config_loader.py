@@ -59,6 +59,8 @@ def get_config_from_api(config):
         "url": config["manager-api"].get("url", ""),
         "secret": config["manager-api"].get("secret", ""),
     }
+    # 强制设置delete_audio为false避免EdgeTTS需要ffprobe依赖
+    config_data["delete_audio"] = False
     # server的配置以本地为准
     if config.get("server"):
         config_data["server"] = {

@@ -5,6 +5,7 @@ import queue
 import asyncio
 import traceback
 import websockets
+import time
 from core.utils.tts import MarkdownCleaner
 from config.logger import setup_logging
 from core.utils import opus_encoder_utils
@@ -227,15 +228,20 @@ class TTSProvider(TTSProviderBase):
                 elif ContentType.TEXT == message.content_type:
                     if message.content_detail:
                         try:
-                            logger.bind(tag=TAG).debug(
-                                f"开始发送TTS文本: {message.content_detail}"
+                            # 🎵 实时性检测：记录TTS文本发送开始时间
+                            tts_text_start_time = time.time()
+                            logger.bind(tag=TAG).info(
+                                f"🎵 [实时检测] 火山双流式TTS开始处理文本: {message.content_detail} | 开始时间: {tts_text_start_time:.3f}"
                             )
                             future = asyncio.run_coroutine_threadsafe(
                                 self.text_to_speak(message.content_detail, None),
                                 loop=self.conn.loop,
                             )
                             future.result()
-                            logger.bind(tag=TAG).debug("TTS文本发送成功")
+                            tts_text_sent_time = time.time()
+                            logger.bind(tag=TAG).info(
+                                f"🎵 [实时检测] 火山双流式TTS文本发送完成 | 耗时: {(tts_text_sent_time - tts_text_start_time)*1000:.1f}ms"
+                            )
                         except Exception as e:
                             logger.bind(tag=TAG).error(f"发送TTS文本失败: {str(e)}")
                             continue
@@ -428,7 +434,9 @@ class TTSProvider(TTSProviderBase):
                     if res.optional.event == EVENT_TTSSentenceStart:
                         json_data = json.loads(res.payload.decode("utf-8"))
                         self.tts_text = json_data.get("text", "")
-                        logger.bind(tag=TAG).debug(f"句子语音生成开始: {self.tts_text}")
+                        # 🎵 实时性检测：记录TTS句子开始生成时间
+                        sentence_start_time = time.time()
+                        logger.bind(tag=TAG).info(f"🎵 [实时检测] 火山双流式TTS句子开始生成: {self.tts_text} | 开始时间: {sentence_start_time:.3f}")
                         self.tts_audio_queue.put(
                             (SentenceType.FIRST, [], self.tts_text)
                         )
@@ -438,10 +446,12 @@ class TTSProvider(TTSProviderBase):
                         res.optional.event == EVENT_TTSResponse
                         and res.header.message_type == AUDIO_ONLY_RESPONSE
                     ):
-                        logger.bind(tag=TAG).debug(f"推送数据到队列里面～～")
+                        # 🎵 实时性棃测：记录TTS音频数据接收时间
+                        audio_received_time = time.time()
+                        logger.bind(tag=TAG).debug(f"🎵 [实时检测] 接收到火山TTS音频数据 | 时间: {audio_received_time:.3f}")
                         opus_datas = self.wav_to_opus_data_audio_raw(res.payload)
                         logger.bind(tag=TAG).debug(
-                            f"推送数据到队列里面帧数～～{len(opus_datas)}"
+                            f"🎵 [实时检测] 音频数据帧数: {len(opus_datas)}"
                         )
                         if is_first_sentence:
                             first_sentence_segment_count += 1
@@ -455,7 +465,9 @@ class TTSProvider(TTSProviderBase):
                             # 后续句子缓存
                             opus_datas_cache = opus_datas_cache + opus_datas
                     elif res.optional.event == EVENT_TTSSentenceEnd:
-                        logger.bind(tag=TAG).info(f"句子语音生成成功：{self.tts_text}")
+                        # 🎵 实时性检测：记录TTS句子生成完成时间  
+                        sentence_end_time = time.time()
+                        logger.bind(tag=TAG).info(f"🎵 [实时检测] 火山双流式TTS句子生成完成: {self.tts_text} | 完成时间: {sentence_end_time:.3f}")
                         if not is_first_sentence or first_sentence_segment_count > 10:
                             # 发送缓存的数据
                             self.tts_audio_queue.put(
@@ -508,6 +520,8 @@ class TTSProvider(TTSProviderBase):
             raise
 
     async def send_text(self, speaker: str, text: str, session_id):
+        # 🎵 实时性检测：记录文本发送到TTS服务的时间
+        send_start_time = time.time()
         header = Header(
             message_type=FULL_CLIENT_REQUEST,
             message_type_specific_flags=MsgTypeFlagWithEvent,
@@ -517,7 +531,10 @@ class TTSProvider(TTSProviderBase):
         payload = self.get_payload_bytes(
             event=EVENT_TaskRequest, text=text, speaker=speaker
         )
-        return await self.send_event(self.ws, header, optional, payload)
+        result = await self.send_event(self.ws, header, optional, payload)
+        send_end_time = time.time()
+        logger.bind(tag=TAG).debug(f"🎵 [实时检测] 文本发送到火山TTS服务耗时: {(send_end_time - send_start_time)*1000:.1f}ms")
+        return result
 
     # 读取 res 数组某段 字符串内容
     def read_res_content(self, res: bytes, offset: int):

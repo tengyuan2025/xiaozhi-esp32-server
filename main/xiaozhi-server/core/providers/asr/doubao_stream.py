@@ -4,6 +4,7 @@ import uuid
 import asyncio
 import websockets
 import opuslib_next
+import time
 from core.providers.asr.base import ASRProviderBase
 from config.logger import setup_logging
 from core.providers.asr.dto.dto import InterfaceType
@@ -54,6 +55,10 @@ class ASRProvider(ASRProviderBase):
         await super().open_audio_channels(conn)
 
     async def receive_audio(self, conn, audio, audio_have_voice):
+        # 🎙️ 实时性检测：记录音频接收时间
+        audio_receive_time = time.time()
+        logger.bind(tag=TAG).info(f"🎙️ [实时检测] 豆包流式ASR接收音频数据 - 时间戳: {audio_receive_time:.3f}, 有声音: {audio_have_voice}")
+        
         conn.asr_audio.append(audio)
         conn.asr_audio = conn.asr_audio[-10:]
 
@@ -136,12 +141,16 @@ class ASRProvider(ASRProviderBase):
         # 发送当前音频数据
         if self.asr_ws and self.is_processing:
             try:
+                # 🎙️ 实时性检测：记录音频发送到ASR服务的时间
+                send_start_time = time.time()
                 pcm_frame = self.decoder.decode(audio, 960)
                 payload = gzip.compress(pcm_frame)
                 audio_request = bytearray(self.generate_audio_default_header())
                 audio_request.extend(len(payload).to_bytes(4, "big"))
                 audio_request.extend(payload)
                 await self.asr_ws.send(audio_request)
+                send_end_time = time.time()
+                logger.bind(tag=TAG).debug(f"🎙️ [实时检测] 音频数据发送到豆包ASR耗时: {(send_end_time - send_start_time)*1000:.1f}ms")
             except Exception as e:
                 logger.bind(tag=TAG).info(f"发送音频数据时发生错误: {e}")
 
@@ -177,8 +186,10 @@ class ASRProvider(ASRProviderBase):
                             for utterance in utterances:
                                 if utterance.get("definite", False):
                                     self.text = utterance["text"]
+                                    # 🎙️ 实时性检测：记录ASR识别完成时间
+                                    asr_result_time = time.time()
                                     logger.bind(tag=TAG).info(
-                                        f"识别到文本: {self.text}"
+                                        f"🎙️ [实时检测] 豆包流式ASR识别完成 - 识别文本: {self.text} | 完成时间: {asr_result_time:.3f}"
                                     )
                                     conn.reset_vad_states()
                                     await self.handle_voice_stop(conn, None)
