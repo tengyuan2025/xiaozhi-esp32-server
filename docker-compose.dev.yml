@@ -1,0 +1,195 @@
+# xiaozhi-esp32-server 开发环境 Docker Compose 配置
+# 包含所有服务和依赖，提供完整的开发环境
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: xiaozhi-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: xiaozhi123
+      MYSQL_DATABASE: xiaozhi
+      MYSQL_USER: xiaozhi
+      MYSQL_PASSWORD: xiaozhi123
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./main/manager-api/src/main/resources/db/changelog:/docker-entrypoint-initdb.d
+    ports:
+      - "3306:3306"
+    networks:
+      - xiaozhi-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: xiaozhi-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass xiaozhi123
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - xiaozhi-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # xiaozhi-server Python 核心服务
+  xiaozhi-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.xiaozhi-server
+    container_name: xiaozhi-server
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - XIAOZHI_LOG_LEVEL=INFO
+    volumes:
+      # 开发时挂载源码目录，方便实时修改
+      - ./main/xiaozhi-server:/app
+      - xiaozhi_models:/app/models
+      - xiaozhi_tmp:/app/tmp
+      - xiaozhi_data:/app/data
+    ports:
+      - "8000:8000"  # WebSocket 端口
+      - "8003:8003"  # HTTP 端口
+    networks:
+      - xiaozhi-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # manager-api Java 管理后端
+  manager-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.manager-api
+    container_name: xiaozhi-manager-api
+    restart: unless-stopped
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/xiaozhi?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=GMT%2B8
+      - SPRING_DATASOURCE_USERNAME=xiaozhi
+      - SPRING_DATASOURCE_PASSWORD=xiaozhi123
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PORT=6379
+      - SPRING_REDIS_PASSWORD=xiaozhi123
+    volumes:
+      # 开发时挂载源码目录
+      - ./main/manager-api:/app
+    ports:
+      - "8080:8080"
+    networks:
+      - xiaozhi-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # manager-web Vue2 Web 管理界面
+  manager-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.manager-web
+    container_name: xiaozhi-manager-web
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    networks:
+      - xiaozhi-network
+    depends_on:
+      manager-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # manager-mobile Uni-app 移动端 H5
+  manager-mobile:
+    build:
+      context: .
+      dockerfile: Dockerfile.manager-mobile
+    container_name: xiaozhi-manager-mobile
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    networks:
+      - xiaozhi-network
+    depends_on:
+      manager-api:
+        condition: service_healthy
+      xiaozhi-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # nginx 反向代理 (可选)
+  nginx:
+    image: nginx:alpine
+    container_name: xiaozhi-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - xiaozhi-network
+    depends_on:
+      - xiaozhi-server
+      - manager-api
+      - manager-web
+      - manager-mobile
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  xiaozhi_models:
+    driver: local
+  xiaozhi_tmp:
+    driver: local
+  xiaozhi_data:
+    driver: local
+
+networks:
+  xiaozhi-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,244 @@
+# xiaozhi-esp32-server 生产环境 Docker Compose 配置
+# 优化的生产配置，包含资源限制和安全设置
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: xiaozhi-mysql-prod
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-xiaozhi_prod_2024}
+      MYSQL_DATABASE: xiaozhi
+      MYSQL_USER: xiaozhi
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-xiaozhi_prod_2024}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d:ro
+    networks:
+      - xiaozhi-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: xiaozhi-redis-prod
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-xiaozhi_redis_2024}
+    volumes:
+      - redis_data:/data
+    networks:
+      - xiaozhi-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # xiaozhi-server Python 核心服务
+  xiaozhi-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.xiaozhi-server
+    container_name: xiaozhi-server-prod
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
+      - XIAOZHI_LOG_LEVEL=INFO
+    volumes:
+      - xiaozhi_models:/app/models
+      - xiaozhi_tmp:/app/tmp
+      - xiaozhi_data:/app/data
+      - xiaozhi_logs:/app/logs
+      # 生产配置
+      - ./config/production.yaml:/app/data/.config.yaml:ro
+    networks:
+      - xiaozhi-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # manager-api Java 管理后端
+  manager-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.manager-api
+    container_name: xiaozhi-manager-api-prod
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/xiaozhi?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=GMT%2B8
+      - SPRING_DATASOURCE_USERNAME=xiaozhi
+      - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD:-xiaozhi_prod_2024}
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PORT=6379
+      - SPRING_REDIS_PASSWORD=${REDIS_PASSWORD:-xiaozhi_redis_2024}
+      - JAVA_OPTS=-Xms1g -Xmx2g -XX:+UseG1GC -XX:+UseContainerSupport
+    volumes:
+      - xiaozhi_logs:/app/logs
+    networks:
+      - xiaozhi-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 3G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # manager-web Vue2 Web 管理界面
+  manager-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.manager-web
+    container_name: xiaozhi-manager-web-prod
+    restart: always
+    networks:
+      - xiaozhi-network
+    depends_on:
+      manager-api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # manager-mobile Uni-app 移动端 H5
+  manager-mobile:
+    build:
+      context: .
+      dockerfile: Dockerfile.manager-mobile
+    container_name: xiaozhi-manager-mobile-prod
+    restart: always
+    networks:
+      - xiaozhi-network
+    depends_on:
+      manager-api:
+        condition: service_healthy
+      xiaozhi-server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # nginx 反向代理和负载均衡
+  nginx:
+    image: nginx:alpine
+    container_name: xiaozhi-nginx-prod
+    restart: always
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - xiaozhi-network
+    depends_on:
+      - xiaozhi-server
+      - manager-api
+      - manager-web
+      - manager-mobile
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  xiaozhi_models:
+    driver: local
+  xiaozhi_tmp:
+    driver: local
+  xiaozhi_data:
+    driver: local
+  xiaozhi_logs:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  xiaozhi-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

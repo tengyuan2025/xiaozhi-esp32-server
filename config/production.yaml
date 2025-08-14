@@ -1,0 +1,13 @@
+# 生产环境配置
+server:
+  ip: 0.0.0.0
+  port: 8000
+  http_port: 8003
+
+log:
+  log_level: INFO
+  log_dir: logs
+  log_file: "server.log"
+
+# 请在此处添加你的生产环境配置
+# 例如 API 密钥、数据库连接等

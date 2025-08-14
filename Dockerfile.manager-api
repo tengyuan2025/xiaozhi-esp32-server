@@ -1,0 +1,38 @@
+# manager-api Java 服务 Dockerfile
+FROM openjdk:21-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装必要工具
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Maven
+RUN wget https://archive.apache.org/dist/maven/maven-3/3.9.4/binaries/apache-maven-3.9.4-bin.tar.gz && \
+    tar -xzf apache-maven-3.9.4-bin.tar.gz && \
+    mv apache-maven-3.9.4 /opt/maven && \
+    rm apache-maven-3.9.4-bin.tar.gz
+
+# 设置 Maven 环境变量
+ENV M2_HOME=/opt/maven
+ENV PATH=${M2_HOME}/bin:${PATH}
+
+# 复制项目文件
+COPY main/manager-api/pom.xml .
+COPY main/manager-api/src/ src/
+
+# 构建应用
+RUN mvn clean package -DskipTests
+
+# 暴露端口
+EXPOSE 8080
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# 启动命令
+CMD ["java", "-jar", "target/xiaozhi-esp32-api.jar"]
