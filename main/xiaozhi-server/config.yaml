@@ -290,8 +290,8 @@ ASR:
     # DoubaoASR和DoubaoStreamASR的区别是：DoubaoASR是按次收费，DoubaoStreamASR是按时收费
     # 一般来说按次收费的更便宜，但是DoubaoStreamASR使用了大模型技术，效果更好
     type: doubao
-    appid: 你的火山引擎语音合成服务appid
-    access_token: 你的火山引擎语音合成服务access_token
+    appid: 7059594059
+    access_token: tRDp6c2pMhqtMXWYCINDSCDQPyfaWZbt
     cluster: volcengine_input_common
     # 热词、替换词使用流程：https://www.volcengine.com/docs/6561/155738
     boosting_table_name: （选填）你的热词文件名称
@@ -435,8 +435,8 @@ LLM:
     # 免费额度500000token
     # 开通后，进入这里获取密钥：https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey?apikey=%7B%7D
     base_url: https://ark.cn-beijing.volces.com/api/v3
-    model_name: doubao-1-5-pro-32k-250115
-    api_key: 你的doubao web key
+    model_name: doubao-seed-1-6-250615
+    api_key: 35ef5232-453b-45e3-9bf7-06138ff77dc9
   DeepSeekLLM:
     # 定义LLM API类型
     type: openai
