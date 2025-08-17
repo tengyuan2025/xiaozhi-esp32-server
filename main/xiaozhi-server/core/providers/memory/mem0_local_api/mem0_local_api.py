@@ -47,7 +47,7 @@ class MemoryProvider(MemoryProviderBase):
             
             # 调用本地 mem0 服务的 add 接口
             response = await self.client.post(
-                "/v1/memories",
+                "/v1/memories/",
                 json={
                     "messages": messages,
                     "user_id": self.role_id,
@@ -94,17 +94,30 @@ class MemoryProvider(MemoryProviderBase):
             # 格式化记忆条目
             memories = []
             for entry in results["results"]:
-                timestamp = entry.get("updated_at", "")
-                if timestamp:
-                    try:
-                        # 解析和重新格式化时间戳
-                        dt = timestamp.split(".")[0]  # 移除毫秒
-                        formatted_time = dt.replace("T", " ")
-                    except:
-                        formatted_time = timestamp
-                memory = entry.get("memory", "")
-                if timestamp and memory:
-                    memories.append((timestamp, f"[{formatted_time}] {memory}"))
+                # 尝试获取时间戳，优先使用 updated_at，然后是 created_at
+                timestamp = entry.get("updated_at", entry.get("created_at", ""))
+                # content 字段包含完整对话内容
+                content = entry.get("content", "")
+                # relevance_score 是相关度分数
+                score = entry.get("relevance_score", 0.0)
+                
+                if content:
+                    if timestamp:
+                        try:
+                            # 解析和重新格式化时间戳
+                            dt = timestamp.split(".")[0]  # 移除毫秒
+                            formatted_time = dt.replace("T", " ")
+                            memory_text = f"[{formatted_time}] {content}"
+                        except:
+                            memory_text = f"[{timestamp}] {content}"
+                    else:
+                        memory_text = content
+                    
+                    # 包含相关度得分信息
+                    if score > 0:
+                        memory_text += f" (相关度: {score:.1f})"
+                    
+                    memories.append((timestamp or "0", memory_text))
 
             # 按时间戳降序排序（最新的在前）
             memories.sort(key=lambda x: x[0], reverse=True)

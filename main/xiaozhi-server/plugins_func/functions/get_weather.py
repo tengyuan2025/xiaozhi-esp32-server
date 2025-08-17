@@ -153,13 +153,13 @@ def parse_weather_info(soup):
 def get_weather(conn, location: str = None, lang: str = "zh_CN"):
     from core.utils.cache.manager import cache_manager, CacheType
 
-    api_host = conn.config["plugins"]["get_weather"].get(
-        "api_host", "mj7p3y7naa.re.qweatherapi.com"
-    )
-    api_key = conn.config["plugins"]["get_weather"].get(
-        "api_key", "a861d0d5e7bf4ee1a83d9a9e4f96d4da"
-    )
-    default_location = conn.config["plugins"]["get_weather"]["default_location"]
+    # 安全地获取插件配置，避免KeyError
+    plugins_config = conn.config.get("plugins", {})
+    weather_config = plugins_config.get("get_weather", {})
+    
+    api_host = weather_config.get("api_host", "mj7p3y7naa.re.qweatherapi.com")
+    api_key = weather_config.get("api_key", "a861d0d5e7bf4ee1a83d9a9e4f96d4da")
+    default_location = weather_config.get("default_location", "杭州")
     client_ip = conn.client_ip
 
     # 优先使用用户提供的location参数

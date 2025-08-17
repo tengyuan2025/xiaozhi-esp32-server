@@ -61,20 +61,23 @@ def initialize_modules(
         )
         logger.bind(tag=TAG).info(f"初始化组件: intent成功 {select_intent_module}")
 
-    # 初始化Memory模块
+    # 初始化Memory模块 - 强制使用 mem0_local_api
     if init_memory:
-        select_memory_module = config["selected_module"]["Memory"]
-        memory_type = (
-            select_memory_module
-            if "type" not in config["Memory"][select_memory_module]
-            else config["Memory"][select_memory_module]["type"]
-        )
+        # 强制使用 mem0_local_api，不管配置中设置的是什么
+        forced_memory_type = "mem0_local_api"
+        forced_memory_config = {
+            "type": "mem0_local_api",
+            "base_url": "http://127.0.0.1:8004",
+            "api_key": "",
+            "timeout": 30
+        }
         modules["memory"] = memory.create_instance(
-            memory_type,
-            config["Memory"][select_memory_module],
+            forced_memory_type,
+            forced_memory_config,
             config.get("summaryMemory", None),
         )
-        logger.bind(tag=TAG).info(f"初始化组件: memory成功 {select_memory_module}")
+        logger.bind(tag=TAG).info(f"初始化组件: memory成功，强制使用 {forced_memory_type}")
+        logger.bind(tag=TAG).warning("已强制使用 mem0_local_api 记忆提供商，忽略配置中的其他设置")
 
     # 初始化VAD模块
     if init_vad:
