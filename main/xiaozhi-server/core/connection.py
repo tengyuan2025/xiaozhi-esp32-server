@@ -506,8 +506,8 @@ class ConnectionHandler:
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"获取差异化配置失败: {e}")
             # 如果是网络错误，不应该设置need_bind
-            if "[Errno 35]" in str(e) or "write could not complete without blocking" in str(e):
-                self.logger.bind(tag=TAG).warning("网络错误，不设置need_bind")
+            if "[Errno 35]" in str(e) or "write could not complete without blocking" in str(e) or "ConnectError" in str(e) or "TimeoutException" in str(e):
+                self.logger.bind(tag=TAG).warning("网络错误，不设置need_bind，尝试使用缓存配置")
                 # 尝试使用缓存的配置
                 from core.utils.cache.manager import cache_manager, CacheType
                 cached_config = cache_manager.get(CacheType.CONFIG, f"agent_config_{device_id}")
@@ -515,6 +515,7 @@ class ConnectionHandler:
                     self.logger.bind(tag=TAG).info("使用缓存的私有配置")
                     private_config = cached_config
                 else:
+                    self.logger.bind(tag=TAG).warning("无缓存配置可用，使用基础配置继续运行")
                     private_config = {}
             else:
                 self.need_bind = True

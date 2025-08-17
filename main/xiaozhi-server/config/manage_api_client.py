@@ -57,10 +57,10 @@ class ManageApiClient:
                 "Authorization": "Bearer " + cls._secret,
             },
             timeout=httpx.Timeout(
-                connect=5.0,  # 连接超时
+                connect=10.0,  # 连接超时增加到10秒
                 read=30.0,    # 读取超时
-                write=10.0,   # 写入超时
-                pool=5.0      # 连接池获取超时
+                write=30.0,   # 写入超时增加到30秒，避免非阻塞IO错误
+                pool=10.0     # 连接池获取超时增加到10秒
             ),
             limits=httpx.Limits(
                 max_keepalive_connections=5,
@@ -120,15 +120,21 @@ class ManageApiClient:
                 if "[Errno 35]" in str(e) or "write could not complete without blocking" in str(e):
                     retry_count += 1
                     if retry_count <= cls.max_retries:
-                        print(f"{method} {endpoint} 遇到非阻塞IO错误，将在 0.5 秒后进行第 {retry_count} 次重试")
+                        try:
+                            print(f"{method} {endpoint} 遇到非阻塞IO错误，将在 0.5 秒后进行第 {retry_count} 次重试")
+                        except:
+                            pass
                         time.sleep(0.5)
                         continue
                 # 判断是否应该重试
                 elif retry_count < cls.max_retries and cls._should_retry(e):
                     retry_count += 1
-                    print(
-                        f"{method} {endpoint} 请求失败，将在 {cls.retry_delay:.1f} 秒后进行第 {retry_count} 次重试"
-                    )
+                    try:
+                        print(
+                            f"{method} {endpoint} 请求失败，将在 {cls.retry_delay:.1f} 秒后进行第 {retry_count} 次重试"
+                        )
+                    except:
+                        pass
                     time.sleep(cls.retry_delay)
                     continue
                 else:
@@ -169,10 +175,17 @@ def get_agent_models(
                 "selectedModule": selected_module,
             },
         )
-        print(f"[DEBUG] API返回的配置: {result}")
+        # 只打印配置的摘要信息，避免大量数据导致的写入错误
+        if result:
+            config_keys = list(result.keys()) if isinstance(result, dict) else "非字典类型"
+            print(f"[DEBUG] API返回配置成功，包含字段: {config_keys}")
         return result
     except Exception as e:
-        print(f"[ERROR] 获取智能体配置失败: {e}")
+        try:
+            print(f"[ERROR] 获取智能体配置失败: {e}")
+        except:
+            # 如果连错误信息都无法打印，忽略打印错误
+            pass
         # 如果是网络错误，抛出异常让上层处理
         if "[Errno 35]" in str(e) or "write could not complete without blocking" in str(e):
             raise

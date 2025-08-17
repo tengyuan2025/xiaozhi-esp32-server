@@ -1,0 +1,38 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: xiaozhi-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: xiaozhi_esp32_server
+      MYSQL_USER: xiaozhi
+      MYSQL_PASSWORD: xiaozhi123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - xiaozhi-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: xiaozhi-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - xiaozhi-network
+
+networks:
+  xiaozhi-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
