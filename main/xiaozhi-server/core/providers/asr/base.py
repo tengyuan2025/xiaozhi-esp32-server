@@ -76,6 +76,12 @@ class ASRProviderBase(ABC):
         """并行处理ASR和声纹识别"""
         try:
             total_start_time = time.monotonic()
+            # 记录全链路开始时间
+            conn.voice_pipeline_start_time = total_start_time
+            # 重置记录标志，确保每次新的语音输入都能记录全链路时间
+            if hasattr(conn, 'first_audio_recorded'):
+                delattr(conn, 'first_audio_recorded')
+            logger.bind(tag=TAG).info(f"🎤 语音处理开始 - 开始时间: {total_start_time:.3f}")
             
             # 准备音频数据
             if conn.audio_format == "pcm":
@@ -157,6 +163,12 @@ class ASRProviderBase(ABC):
             # 记录识别结果
             if raw_text:
                 logger.bind(tag=TAG).info(f"识别文本: {raw_text}")
+                # 记录ASR完成时间
+                asr_complete_time = time.monotonic()
+                conn.asr_complete_time = asr_complete_time
+                asr_duration = asr_complete_time - total_start_time
+                pipeline_duration = asr_complete_time - conn.voice_pipeline_start_time
+                logger.bind(tag=TAG).info(f"🗣️ ASR识别完成 - 耗时: {asr_duration:.3f}s, 从语音开始: {pipeline_duration:.3f}s")
             if speaker_name:
                 logger.bind(tag=TAG).info(f"识别说话人: {speaker_name}")
             

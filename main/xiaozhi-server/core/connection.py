@@ -201,6 +201,18 @@ class ConnectionHandler:
             # 认证通过,继续处理
             self.websocket = ws
             self.device_id = self.headers.get("device-id", None)
+            
+            # 在设置device_id后重新配置日志器，使其显示正确的设备标识
+            if self.device_id:
+                from config.logger import create_connection_logger, build_module_string
+                # 构建模块字符串（从配置中获取）
+                selected_module = self.config.get("selected_module", {})
+                module_str = build_module_string(selected_module)
+                # 使用设备ID的后12位（去掉冒号）作为设备标识
+                device_tag = self.device_id.replace(":", "")[-12:] if len(self.device_id.replace(":", "")) >= 12 else self.device_id.replace(":", "")
+                # 组合设备标识和模块字符串
+                log_identifier = device_tag + module_str
+                self.logger = create_connection_logger(log_identifier)
 
             # 初始化活动时间戳
             self.last_activity_time = time.time() * 1000
@@ -246,17 +258,22 @@ class ConnectionHandler:
         """保存记忆并关闭连接"""
         try:
             if self.memory:
+                self.logger.bind(tag=TAG).info(f"开始保存记忆 - 对话消息数量: {len(self.dialogue.dialogue)}")
                 # 使用线程池异步保存记忆
                 def save_memory_task():
                     try:
+                        self.logger.bind(tag=TAG).info("记忆保存线程启动")
                         # 创建新事件循环（避免与主循环冲突）
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         loop.run_until_complete(
                             self.memory.save_memory(self.dialogue.dialogue)
                         )
+                        self.logger.bind(tag=TAG).info("记忆保存线程完成")
                     except Exception as e:
                         self.logger.bind(tag=TAG).error(f"保存记忆失败: {e}")
+                        import traceback
+                        self.logger.bind(tag=TAG).error(f"详细错误: {traceback.format_exc()}")
                     finally:
                         try:
                             loop.close()
@@ -265,6 +282,8 @@ class ConnectionHandler:
 
                 # 启动线程保存记忆，不等待完成
                 threading.Thread(target=save_memory_task, daemon=True).start()
+            else:
+                self.logger.bind(tag=TAG).info("没有配置记忆系统，跳过记忆保存")
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"保存记忆失败: {e}")
         finally:
@@ -445,31 +464,61 @@ class ConnectionHandler:
 
     def _initialize_private_config(self):
         """如果是从配置文件获取，则进行二次实例化"""
+        self.logger.bind(tag=TAG).info(f"配置初始化检查 - read_config_from_api: {self.read_config_from_api}")
         if not self.read_config_from_api:
+            self.logger.bind(tag=TAG).info("使用本地配置文件，跳过API配置获取")
             return
         """从接口获取差异化的配置进行二次实例化，非全量重新实例化"""
         try:
             begin_time = time.time()
+            device_id = self.headers.get("device-id")
+            client_id = self.headers.get("client-id", self.headers.get("device-id"))
+            
+            self.logger.bind(tag=TAG).info(f"开始从API获取配置 - 设备ID: {device_id}, 客户端ID: {client_id}")
+            self.logger.bind(tag=TAG).info(f"当前基础配置selected_module: {self.config.get('selected_module', {})}")
+            
             private_config = get_private_config_from_api(
                 self.config,
-                self.headers.get("device-id"),
-                self.headers.get("client-id", self.headers.get("device-id")),
+                device_id,
+                client_id,
             )
-            private_config["delete_audio"] = bool(self.config.get("delete_audio", True))
-            self.logger.bind(tag=TAG).info(
-                f"{time.time() - begin_time} 秒，获取差异化配置成功: {json.dumps(filter_sensitive_info(private_config), ensure_ascii=False)}"
-            )
+            
+            if private_config:
+                private_config["delete_audio"] = bool(self.config.get("delete_audio", True))
+                self.logger.bind(tag=TAG).info(
+                    f"{time.time() - begin_time} 秒，获取差异化配置成功: {json.dumps(filter_sensitive_info(private_config), ensure_ascii=False)}"
+                )
+                # 缓存配置以备网络错误时使用
+                from core.utils.cache.manager import cache_manager, CacheType
+                cache_manager.set(CacheType.CONFIG, f"agent_config_{device_id}", private_config, ttl=3600)
+            else:
+                self.logger.bind(tag=TAG).warning("API返回的配置为空")
+                private_config = {}
         except DeviceNotFoundException as e:
+            self.logger.bind(tag=TAG).warning(f"设备未找到，需要绑定: {e}")
             self.need_bind = True
             private_config = {}
         except DeviceBindException as e:
+            self.logger.bind(tag=TAG).warning(f"设备需要绑定，绑定码: {e.bind_code}")
             self.need_bind = True
             self.bind_code = e.bind_code
             private_config = {}
         except Exception as e:
-            self.need_bind = True
             self.logger.bind(tag=TAG).error(f"获取差异化配置失败: {e}")
-            private_config = {}
+            # 如果是网络错误，不应该设置need_bind
+            if "[Errno 35]" in str(e) or "write could not complete without blocking" in str(e):
+                self.logger.bind(tag=TAG).warning("网络错误，不设置need_bind")
+                # 尝试使用缓存的配置
+                from core.utils.cache.manager import cache_manager, CacheType
+                cached_config = cache_manager.get(CacheType.CONFIG, f"agent_config_{device_id}")
+                if cached_config:
+                    self.logger.bind(tag=TAG).info("使用缓存的私有配置")
+                    private_config = cached_config
+                else:
+                    private_config = {}
+            else:
+                self.need_bind = True
+                private_config = {}
 
         init_llm, init_tts, init_memory, init_intent = (
             False,
@@ -666,6 +715,13 @@ class ConnectionHandler:
 
     def chat(self, query, tool_call=False, depth=0):
         self.logger.bind(tag=TAG).info(f"大模型收到用户消息: {query}")
+        llm_start_time = time.time()  # 记录LLM开始时间
+        
+        # 记录LLM开始处理时间（全链路统计）
+        if hasattr(self, 'voice_pipeline_start_time'):
+            llm_pipeline_duration = time.monotonic() - self.voice_pipeline_start_time
+            self.logger.bind(tag=TAG).info(f"🧠 LLM开始处理 - 从语音开始: {llm_pipeline_duration:.3f}s")
+        
         self.llm_finish_task = False
 
         if not tool_call:
@@ -832,6 +888,10 @@ class ConnectionHandler:
                 )
             )
         self.llm_finish_task = True
+        # 记录LLM完成时间和耗时
+        llm_end_time = time.time()
+        llm_duration = llm_end_time - llm_start_time
+        self.logger.bind(tag=TAG).info(f"大模型响应完成，耗时: {llm_duration:.3f}秒")
         # 使用lambda延迟计算，只有在DEBUG级别时才执行get_llm_dialogue()
         self.logger.bind(tag=TAG).debug(
             lambda: json.dumps(

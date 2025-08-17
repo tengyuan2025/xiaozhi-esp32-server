@@ -94,9 +94,14 @@ def opus_to_wav(conn, opus_data):
 
 
 def enqueue_tts_report(conn, text, opus_data):
+    # 添加详细的调试信息
+    conn.logger.bind(tag=TAG).debug(f"TTS上报检查 - read_config_from_api: {conn.read_config_from_api}, need_bind: {conn.need_bind}, report_tts_enable: {conn.report_tts_enable}, chat_history_conf: {conn.chat_history_conf}")
+    
     if not conn.read_config_from_api or conn.need_bind or not conn.report_tts_enable:
+        conn.logger.bind(tag=TAG).info(f"TTS上报被跳过 - API配置: {conn.read_config_from_api}, 绑定状态: {conn.need_bind}, TTS上报: {conn.report_tts_enable}")
         return
     if conn.chat_history_conf == 0:
+        conn.logger.bind(tag=TAG).info(f"TTS上报被跳过 - 聊天记录配置为0（不记录）")
         return
     """将TTS数据加入上报队列
 
@@ -122,9 +127,14 @@ def enqueue_tts_report(conn, text, opus_data):
 
 
 def enqueue_asr_report(conn, text, opus_data):
+    # 添加详细的调试信息
+    conn.logger.bind(tag=TAG).debug(f"ASR上报检查 - read_config_from_api: {conn.read_config_from_api}, need_bind: {conn.need_bind}, report_asr_enable: {conn.report_asr_enable}, chat_history_conf: {conn.chat_history_conf}")
+    
     if not conn.read_config_from_api or conn.need_bind or not conn.report_asr_enable:
+        conn.logger.bind(tag=TAG).info(f"ASR上报被跳过 - API配置: {conn.read_config_from_api}, 绑定状态: {conn.need_bind}, ASR上报: {conn.report_asr_enable}")
         return
     if conn.chat_history_conf == 0:
+        conn.logger.bind(tag=TAG).info(f"ASR上报被跳过 - 聊天记录配置为0（不记录）")
         return
     """将ASR数据加入上报队列
 

@@ -4,6 +4,7 @@ import queue
 import uuid
 import asyncio
 import threading
+import time
 from core.utils import p3
 from datetime import datetime
 from core.utils import textUtils
@@ -212,15 +213,27 @@ class TTSProviderBase(ABC):
                     self.tts_text_buff.append(message.content_detail)
                     segment_text = self._get_segment_text()
                     if segment_text:
+                        # 记录TTS处理开始时间
+                        tts_start_time = time.monotonic()
+                        if hasattr(self.conn, 'voice_pipeline_start_time'):
+                            pipeline_duration = tts_start_time - self.conn.voice_pipeline_start_time
+                            logger.bind(tag=TAG).info(f"🎵 TTS开始处理文本: '{segment_text}' - 从语音开始: {pipeline_duration:.3f}s")
+                        
                         if self.delete_audio_file:
                             audio_datas = self.to_tts(segment_text)
                             if audio_datas:
+                                tts_end_time = time.monotonic()
+                                tts_duration = tts_end_time - tts_start_time
+                                logger.bind(tag=TAG).info(f"🎵 TTS音频生成完成 - 耗时: {tts_duration:.3f}s")
                                 self.tts_audio_queue.put(
                                     (message.sentence_type, audio_datas, segment_text)
                                 )
                         else:
                             tts_file = self.to_tts(segment_text)
                             if tts_file:
+                                tts_end_time = time.monotonic()
+                                tts_duration = tts_end_time - tts_start_time
+                                logger.bind(tag=TAG).info(f"🎵 TTS音频生成完成 - 耗时: {tts_duration:.3f}s")
                                 audio_datas = self._process_audio_file(tts_file)
                                 self.tts_audio_queue.put(
                                     (message.sentence_type, audio_datas, segment_text)
@@ -366,18 +379,31 @@ class TTSProviderBase(ABC):
         if remaining_text:
             segment_text = textUtils.get_string_no_punctuation_or_emoji(remaining_text)
             if segment_text:
+                # 记录剩余文本TTS处理开始时间
+                tts_start_time = time.monotonic()
+                if hasattr(self.conn, 'voice_pipeline_start_time'):
+                    pipeline_duration = tts_start_time - self.conn.voice_pipeline_start_time
+                    logger.bind(tag=TAG).info(f"🎵 TTS处理剩余文本: '{segment_text}' - 从语音开始: {pipeline_duration:.3f}s")
+                
                 if self.delete_audio_file:
                     audio_datas = self.to_tts(segment_text)
                     if audio_datas:
+                        tts_end_time = time.monotonic()
+                        tts_duration = tts_end_time - tts_start_time
+                        logger.bind(tag=TAG).info(f"🎵 TTS剩余文本处理完成 - 耗时: {tts_duration:.3f}s")
                         self.tts_audio_queue.put(
                             (SentenceType.MIDDLE, audio_datas, segment_text)
                         )
                 else:
                     tts_file = self.to_tts(segment_text)
-                    audio_datas = self._process_audio_file(tts_file)
-                    self.tts_audio_queue.put(
-                        (SentenceType.MIDDLE, audio_datas, segment_text)
-                    )
+                    if tts_file:
+                        tts_end_time = time.monotonic()
+                        tts_duration = tts_end_time - tts_start_time
+                        logger.bind(tag=TAG).info(f"🎵 TTS剩余文本处理完成 - 耗时: {tts_duration:.3f}s")
+                        audio_datas = self._process_audio_file(tts_file)
+                        self.tts_audio_queue.put(
+                            (SentenceType.MIDDLE, audio_datas, segment_text)
+                        )
                 self.processed_chars += len(full_text)
                 return True
         return False

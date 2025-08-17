@@ -12,8 +12,27 @@ async def sendAudioMessage(conn, sentenceType, audios, text):
     conn.logger.bind(tag=TAG).info(f"发送音频消息: {sentenceType}, {text}")
 
     pre_buffer = False
-    if conn.tts.tts_audio_first_sentence:
+    
+    # 检查是否是本次对话的第一段音频（基于voice_pipeline_start_time存在且未记录过）
+    is_first_audio_of_conversation = (
+        hasattr(conn, 'voice_pipeline_start_time') and 
+        conn.voice_pipeline_start_time and
+        not hasattr(conn, 'first_audio_recorded')
+    )
+    
+    if conn.tts.tts_audio_first_sentence or is_first_audio_of_conversation:
         conn.logger.bind(tag=TAG).info(f"发送第一段语音: {text}")
+        
+        # 记录全链路完成时间
+        if hasattr(conn, 'voice_pipeline_start_time') and conn.voice_pipeline_start_time:
+            first_audio_time = time.monotonic()
+            total_pipeline_duration = first_audio_time - conn.voice_pipeline_start_time
+            conn.logger.bind(tag=TAG).info(f"🔊 第一段音频发送 - 全链路耗时: {total_pipeline_duration:.3f}s")
+            conn.logger.bind(tag=TAG).info(f"📊 【语音反馈链路】🎤接收 → 🗣️识别 → 🧠思考 → 🔊输出: {total_pipeline_duration:.3f}秒")
+            
+            # 标记已记录，避免同一对话重复记录
+            conn.first_audio_recorded = True
+        
         conn.tts.tts_audio_first_sentence = False
         pre_buffer = True
 

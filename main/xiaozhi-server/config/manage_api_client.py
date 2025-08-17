@@ -56,7 +56,18 @@ class ManageApiClient:
                 "Accept": "application/json",
                 "Authorization": "Bearer " + cls._secret,
             },
-            timeout=cls.config.get("timeout", 30),  # 默认超时时间30秒
+            timeout=httpx.Timeout(
+                connect=5.0,  # 连接超时
+                read=30.0,    # 读取超时
+                write=10.0,   # 写入超时
+                pool=5.0      # 连接池获取超时
+            ),
+            limits=httpx.Limits(
+                max_keepalive_connections=5,
+                max_connections=10,
+                keepalive_expiry=30.0
+            ),
+            http2=False,  # 禁用HTTP/2以避免某些兼容性问题
         )
 
     @classmethod
@@ -105,8 +116,15 @@ class ManageApiClient:
                 # 执行请求
                 return cls._request(method, endpoint, **kwargs)
             except Exception as e:
+                # [Errno 35] 是非阻塞IO错误，应该重试
+                if "[Errno 35]" in str(e) or "write could not complete without blocking" in str(e):
+                    retry_count += 1
+                    if retry_count <= cls.max_retries:
+                        print(f"{method} {endpoint} 遇到非阻塞IO错误，将在 0.5 秒后进行第 {retry_count} 次重试")
+                        time.sleep(0.5)
+                        continue
                 # 判断是否应该重试
-                if retry_count < cls.max_retries and cls._should_retry(e):
+                elif retry_count < cls.max_retries and cls._should_retry(e):
                     retry_count += 1
                     print(
                         f"{method} {endpoint} 请求失败，将在 {cls.retry_delay:.1f} 秒后进行第 {retry_count} 次重试"
@@ -134,15 +152,34 @@ def get_agent_models(
     mac_address: str, client_id: str, selected_module: Dict
 ) -> Optional[Dict]:
     """获取代理模型配置"""
-    return ManageApiClient._instance._execute_request(
-        "POST",
-        "/config/agent-models",
-        json={
-            "macAddress": mac_address,
-            "clientId": client_id,
-            "selectedModule": selected_module,
-        },
-    )
+    print(f"[DEBUG] 请求智能体配置 - MAC: {mac_address}, ClientID: {client_id}")
+    print(f"[DEBUG] 当前selected_module: {selected_module}")
+    
+    # 对于关键的配置请求，增加重试次数
+    original_max_retries = ManageApiClient._instance.max_retries
+    ManageApiClient._instance.max_retries = 10  # 临时增加重试次数
+    
+    try:
+        result = ManageApiClient._instance._execute_request(
+            "POST",
+            "/config/agent-models",
+            json={
+                "macAddress": mac_address,
+                "clientId": client_id,
+                "selectedModule": selected_module,
+            },
+        )
+        print(f"[DEBUG] API返回的配置: {result}")
+        return result
+    except Exception as e:
+        print(f"[ERROR] 获取智能体配置失败: {e}")
+        # 如果是网络错误，抛出异常让上层处理
+        if "[Errno 35]" in str(e) or "write could not complete without blocking" in str(e):
+            raise
+        return None
+    finally:
+        # 恢复原来的重试次数
+        ManageApiClient._instance.max_retries = original_max_retries
 
 
 def save_mem_local_short(mac_address: str, short_momery: str) -> Optional[Dict]:
