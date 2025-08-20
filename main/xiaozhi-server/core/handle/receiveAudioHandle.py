@@ -93,6 +93,8 @@ async def startToChat(conn, text):
 async def no_voice_close_connect(conn, have_voice):
     if have_voice:
         conn.last_activity_time = time.time() * 1000
+        # 重置记忆保存标记，因为有新的语音活动
+        conn.memory_saved_for_session = False
         return
     # 只有在已经初始化过时间戳的情况下才进行超时检查
     if conn.last_activity_time > 0.0:
@@ -107,7 +109,9 @@ async def no_voice_close_connect(conn, have_voice):
             conn.close_after_chat = True
             conn.client_abort = False
             end_prompt = conn.config.get("end_prompt", {})
-            if end_prompt and end_prompt.get("enable", True) is False:
+            # 检查是否启用结束语
+            enable_end_prompt = end_prompt.get("enable", False) if end_prompt else False
+            if not enable_end_prompt:
                 conn.logger.bind(tag=TAG).info("结束对话，无需发送结束提示语")
                 await conn.close()
                 return

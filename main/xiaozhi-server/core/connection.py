@@ -154,6 +154,10 @@ class ConnectionHandler:
             int(self.config.get("close_connection_no_voice_time", 120)) + 60
         )  # 在原来第一道关闭的基础上加60秒，进行二道关闭
         self.timeout_task = None
+        
+        # 记忆保存相关
+        self.memory_save_timeout = 60  # 1分钟无活动时保存记忆
+        self.memory_saved_for_session = False  # 标记当前会话是否已保存记忆
 
         # {"mcp":true} 表示启用MCP功能
         self.features = None
@@ -1101,6 +1105,18 @@ class ConnectionHandler:
         self.client_voice_stop = False
         self.logger.bind(tag=TAG).debug("VAD states reset.")
 
+    async def save_memory_async(self):
+        """异步保存记忆到记忆系统"""
+        try:
+            if self.memory and len(self.dialogue.dialogue) > 0:
+                self.logger.bind(tag=TAG).info(f"开始异步保存记忆 - 对话消息数量: {len(self.dialogue.dialogue)}")
+                await self.memory.save_memory(self.dialogue.dialogue)
+                self.logger.bind(tag=TAG).info("记忆保存成功")
+        except Exception as e:
+            self.logger.bind(tag=TAG).error(f"异步保存记忆失败: {e}")
+            import traceback
+            self.logger.bind(tag=TAG).error(f"详细错误: {traceback.format_exc()}")
+
     def chat_and_close(self, text):
         """Chat with the user and then close the connection"""
         try:
@@ -1119,10 +1135,21 @@ class ConnectionHandler:
                 # 检查是否超时（只有在时间戳已初始化的情况下）
                 if self.last_activity_time > 0.0:
                     current_time = time.time() * 1000
+                    time_since_last_activity = current_time - self.last_activity_time
+                    
+                    # 检查是否需要保存记忆（1分钟无活动）
                     if (
-                        current_time - self.last_activity_time
-                        > self.timeout_seconds * 1000
+                        not self.memory_saved_for_session 
+                        and time_since_last_activity > self.memory_save_timeout * 1000
+                        and self.memory 
+                        and len(self.dialogue.dialogue) > 0
                     ):
+                        self.logger.bind(tag=TAG).info("1分钟无语音活动，保存当前对话到记忆系统")
+                        await self.save_memory_async()
+                        self.memory_saved_for_session = True
+                    
+                    # 检查是否需要断开连接
+                    if time_since_last_activity > self.timeout_seconds * 1000:
                         if not self.stop_event.is_set():
                             self.logger.bind(tag=TAG).info("连接超时，准备关闭")
                             # 设置停止事件，防止重复处理
