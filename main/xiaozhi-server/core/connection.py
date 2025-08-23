@@ -156,7 +156,7 @@ class ConnectionHandler:
         self.timeout_task = None
         
         # 记忆保存相关
-        self.memory_save_timeout = 60  # 1分钟无活动时保存记忆
+        self.memory_save_timeout = 10  # 10秒无活动时保存记忆
         self.memory_saved_for_session = False  # 标记当前会话是否已保存记忆
 
         # {"mcp":true} 表示启用MCP功能
@@ -758,21 +758,41 @@ class ConnectionHandler:
                 )
                 memory_str = future.result()
 
+            # 获取完整对话内容（包含记忆）
+            dialogue_with_memory = self.dialogue.get_llm_dialogue_with_memory(
+                memory_str, self.config.get("voiceprint", {})
+            )
+            
+            # 打印LLM请求参数
+            self.logger.bind(tag=TAG).info("=== LLM 请求参数 ===")
+            self.logger.bind(tag=TAG).info(f"Session ID: {self.session_id}")
+            self.logger.bind(tag=TAG).info(f"记忆数据: {memory_str if memory_str else '无'}")
+            self.logger.bind(tag=TAG).info(f"对话消息数量: {len(dialogue_with_memory)}")
+            
+            # 详细打印每条消息
+            for i, msg in enumerate(dialogue_with_memory):
+                role = msg.get('role', 'unknown')
+                content = msg.get('content', '')
+                # 如果内容过长，截取前500字符
+                if len(content) > 500:
+                    content_preview = content[:500] + "...[截断]"
+                else:
+                    content_preview = content
+                self.logger.bind(tag=TAG).info(f"消息 {i+1} [{role}]: {content_preview}")
+            
             if self.intent_type == "function_call" and functions is not None:
+                self.logger.bind(tag=TAG).info(f"Function Call 模式，可用函数数量: {len(functions) if functions else 0}")
                 # 使用支持functions的streaming接口
                 llm_responses = self.llm.response_with_functions(
                     self.session_id,
-                    self.dialogue.get_llm_dialogue_with_memory(
-                        memory_str, self.config.get("voiceprint", {})
-                    ),
+                    dialogue_with_memory,
                     functions=functions,
                 )
             else:
+                self.logger.bind(tag=TAG).info("普通对话模式")
                 llm_responses = self.llm.response(
                     self.session_id,
-                    self.dialogue.get_llm_dialogue_with_memory(
-                        memory_str, self.config.get("voiceprint", {})
-                    ),
+                    dialogue_with_memory,
                 )
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"LLM 处理出错 {query}: {e}")
@@ -1144,7 +1164,7 @@ class ConnectionHandler:
                         and self.memory 
                         and len(self.dialogue.dialogue) > 0
                     ):
-                        self.logger.bind(tag=TAG).info("1分钟无语音活动，保存当前对话到记忆系统")
+                        self.logger.bind(tag=TAG).info(f"{self.memory_save_timeout}秒无语音活动，保存当前对话到记忆系统")
                         await self.save_memory_async()
                         self.memory_saved_for_session = True
                     

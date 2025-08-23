@@ -67,7 +67,7 @@ def initialize_modules(
         forced_memory_type = "mem0_local_api"
         forced_memory_config = {
             "type": "mem0_local_api",
-            "base_url": "http://127.0.0.1:8004",
+            "base_url": "http://localhost:9000",
             "api_key": "",
             "timeout": 30
         }

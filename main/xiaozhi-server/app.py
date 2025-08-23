@@ -1,4 +1,5 @@
 import sys
+import os
 import uuid
 import signal
 import asyncio
@@ -9,6 +10,22 @@ from core.utils.util import get_local_ip, validate_mcp_endpoint
 from core.http_server import SimpleHttpServer
 from core.websocket_server import WebSocketServer
 from core.utils.util import check_ffmpeg_installed
+
+# 禁用所有HTTP代理设置
+def disable_http_proxies():
+    """禁用所有HTTP代理设置"""
+    proxy_envs = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+    
+    # 保存原始代理设置到备份环境变量
+    for env in proxy_envs:
+        value = os.environ.get(env)
+        if value:
+            os.environ[f'ORIG_{env}'] = value
+            del os.environ[env]
+    
+    # 显式设置NO_PROXY为*，阻止所有代理
+    os.environ['NO_PROXY'] = '*'
+    os.environ['no_proxy'] = '*'
 
 TAG = __name__
 logger = setup_logging()
@@ -43,6 +60,10 @@ async def monitor_stdin():
 
 
 async def main():
+    # 首先禁用所有HTTP代理设置
+    disable_http_proxies()
+    logger.bind(tag=TAG).info("已禁用所有HTTP代理设置")
+    
     check_ffmpeg_installed()
     config = load_config()
 

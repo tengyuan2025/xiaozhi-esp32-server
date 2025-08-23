@@ -53,6 +53,9 @@ class ASRProviderBase(ABC):
 
     # 接收音频
     async def receive_audio(self, conn, audio, audio_have_voice):
+        # 记录接收音频开始时间
+        receive_start = time.time()
+        
         if conn.client_listen_mode == "auto" or conn.client_listen_mode == "realtime":
             have_voice = audio_have_voice
         else:
@@ -69,7 +72,17 @@ class ASRProviderBase(ABC):
             conn.reset_vad_states()
 
             if len(asr_audio_task) > 15:
+                # 记录ASR处理开始时间
+                asr_start = time.time()
                 await self.handle_voice_stop(conn, asr_audio_task)
+                # 计算ASR处理耗时
+                asr_duration = (time.time() - asr_start) * 1000
+                logger.bind(tag=TAG).info(f"ASR处理耗时: {asr_duration:.2f}ms")
+        
+        # 计算整个receive_audio的耗时
+        total_duration = (time.time() - receive_start) * 1000
+        if conn.client_voice_stop:
+            logger.bind(tag=TAG).debug(f"receive_audio总耗时: {total_duration:.2f}ms (语音停止)")
 
     # 处理语音停止
     async def handle_voice_stop(self, conn, asr_audio_task: List[bytes]):

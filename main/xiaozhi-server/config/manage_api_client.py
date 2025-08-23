@@ -68,6 +68,8 @@ class ManageApiClient:
                 keepalive_expiry=30.0
             ),
             http2=False,  # 禁用HTTP/2以避免某些兼容性问题
+            trust_env=False,  # 不使用环境变量代理设置
+            proxies={}        # 明确禁用代理
         )
 
     @classmethod

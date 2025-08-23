@@ -50,48 +50,25 @@ class LLMProvider(LLMProviderBase):
         if model_key_msg:
             logger.bind(tag=TAG).error(model_key_msg)
         
-        # 检查代理设置并根据域名决定是否使用代理
-        import os
-        from urllib.parse import urlparse
-        
-        http_proxy = os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy')
-        https_proxy = os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')
-        
-        # 解析目标域名
-        parsed_url = urlparse(self.base_url)
-        domain = parsed_url.hostname
-        
-        # 只对claude.ai和anthropic.com域名使用代理
-        use_proxy = domain and (domain.endswith('claude.ai') or domain.endswith('anthropic.com'))
-        
+        # 强制所有请求都不使用代理
         logger.bind(tag=TAG).info(f"LLM客户端初始化 - API Base URL: {self.base_url}")
-        logger.bind(tag=TAG).info(f"目标域名: {domain}, 是否使用代理: {use_proxy}")
-        logger.bind(tag=TAG).info(f"系统环境代理设置 - HTTP_PROXY: {http_proxy}, HTTPS_PROXY: {https_proxy}")
         
-        # 根据域名决定是否使用代理
-        if use_proxy:
-            # 使用系统代理设置
-            self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=httpx.Timeout(self.timeout))
-            logger.bind(tag=TAG).info("使用代理连接")
-        else:
-            # 强制不使用代理
-            http_client = httpx.Client(
-                timeout=httpx.Timeout(self.timeout),
-                proxies={
-                    "http://": None,
-                    "https://": None,
-                    "all://": None
-                },
-                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
-                http2=True,
-                verify=True
-            )
-            self.client = openai.OpenAI(
-                api_key=self.api_key, 
-                base_url=self.base_url, 
-                http_client=http_client
-            )
-            logger.bind(tag=TAG).info("强制直连，完全禁用代理")
+        # 创建不使用代理的HTTP客户端
+        http_client = httpx.Client(
+            timeout=httpx.Timeout(self.timeout),
+            trust_env=False,  # 不信任环境变量代理设置
+            proxies={},       # 明确禁用所有代理
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+            http2=True,
+            verify=True
+        )
+        
+        self.client = openai.OpenAI(
+            api_key=self.api_key, 
+            base_url=self.base_url, 
+            http_client=http_client
+        )
+        logger.bind(tag=TAG).info("LLM客户端初始化完成，已禁用代理")
     
     def _filter_reasoning_content(self, text):
         """过滤掉豆包模型的reasoning内容，只保留最终回答"""

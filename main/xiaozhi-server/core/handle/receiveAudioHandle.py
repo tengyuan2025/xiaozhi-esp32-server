@@ -12,6 +12,9 @@ TAG = __name__
 
 
 async def handleAudioMessage(conn, audio):
+    # 记录开始处理时间
+    start_time = time.time()
+    
     # 当前片段是否有人说话
     have_voice = conn.vad.is_vad(conn, audio)
     # 如果设备刚刚被唤醒，短暂忽略VAD检测
@@ -30,6 +33,10 @@ async def handleAudioMessage(conn, audio):
     await no_voice_close_connect(conn, have_voice)
     # 接收音频
     await conn.asr.receive_audio(conn, audio, have_voice)
+    
+    # 计算并打印耗时
+    duration = (time.time() - start_time) * 1000  # 转换为毫秒
+    conn.logger.bind(tag=TAG).debug(f"音频处理耗时: {duration:.2f}ms (有语音: {have_voice})")
 
 
 async def resume_vad_detection(conn):
